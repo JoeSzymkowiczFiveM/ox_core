@@ -88,6 +88,18 @@ export async function DeleteCharacter(charId: number) {
   return CDB.updateOne("characters", { charId }, { deleted: Date.now() });
 }
 
+function parseStatuses(statuses?: Dict<number> | string | null): Dict<number> {
+  if (!statuses) return {};
+  if (typeof statuses !== "string") return statuses;
+
+  try {
+    const parsed = JSON.parse(statuses);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 export async function GetCharacterMetadata(charId: number) {
   const row = await CDB.findOne<{
     isDead: boolean | number;
@@ -96,7 +108,7 @@ export async function GetCharacterMetadata(charId: number) {
     phoneNumber: string;
     health: number;
     armour: number;
-    statuses: Dict<number>;
+    statuses: Dict<number> | string;
   }>("characters", { charId });
 
   if (!row) return null;
@@ -108,7 +120,7 @@ export async function GetCharacterMetadata(charId: number) {
     phoneNumber: row.phoneNumber,
     health: row.health,
     armour: row.armour,
-    statuses: row.statuses || {},
+    statuses: parseStatuses(row.statuses),
   };
 }
 

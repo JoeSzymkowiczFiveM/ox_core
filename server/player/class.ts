@@ -420,7 +420,7 @@ export class OxPlayer extends ClassInterface {
       Player(this.source).state.isDead || false,
       GetEntityHealth(this.ped),
       GetPedArmour(this.ped),
-      JSON.stringify(this.#statuses || {}),
+      { ...(this.#statuses || {}) },
       this.charId,
     ];
   }
