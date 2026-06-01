@@ -1,27 +1,24 @@
-import type { Character, Dict, OxStatus, CharacterLicense, OxLicense, BanDetails } from 'types';
-import { CHARACTER_SLOTS } from '../../common/config';
-import { db } from '../db';
-import { OxPlayer } from './class';
+import type { Character, Dict, OxStatus, CharacterLicense, OxLicense, BanDetails } from "types";
+import { CHARACTER_SLOTS } from "../../common/config";
+import { CDB, formatDate } from "../db/chiliaddb";
+import { OxPlayer } from "./class";
 
-export function GetUserIdFromIdentifier(identifier: string, offset?: number) {
-  return db.column<number>('SELECT userId FROM users WHERE license2 = ? LIMIT ?, 1', [identifier, offset || 0]);
+export async function GetUserIdFromIdentifier(identifier: string, offset?: number) {
+  const users = await CDB.find<{ userId: number }>("users", { license2: identifier }, { sort: { field: "userId" } });
+  return users[offset || 0]?.userId ?? null;
 }
 
-export function CreateUser(username: string, { license2, steam, fivem, discord }: Dict<string>) {
-  return db.insert('INSERT INTO users (username, license2, steam, fivem, discord) VALUES (?, ?, ?, ?, ?)', [
-    username,
-    license2,
-    steam,
-    fivem,
-    discord,
-  ]);
+export async function CreateUser(username: string, { license2, steam, fivem, discord }: Dict<string>) {
+  const userId = await CDB.insertOne("users", { username, license2, steam, fivem, discord }, "userId");
+  if (!userId) throw new Error(`Failed to create user for ${license2}`);
+  return userId;
 }
 
 export async function IsStateIdAvailable(stateId: string) {
-  return !(await db.exists('SELECT 1 FROM characters WHERE stateId = ?', [stateId]));
+  return !(await CDB.exists("characters", { stateId }));
 }
 
-export function CreateCharacter(
+export async function CreateCharacter(
   userId: number,
   stateId: string,
   firstName: string,
@@ -30,126 +27,161 @@ export function CreateCharacter(
   date: number,
   phoneNumber?: number,
 ) {
-  return db.insert(
-    'INSERT INTO characters (userId, stateId, firstName, lastName, gender, dateOfBirth, phoneNumber) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [userId, stateId, firstName, lastName, gender, new Date(Number(date)), phoneNumber],
+  const charId = await CDB.insertOne(
+    "characters",
+    {
+      userId,
+      stateId,
+      firstName,
+      lastName,
+      gender,
+      dateOfBirth: new Date(Number(date)).toISOString(),
+      phoneNumber,
+      lastPlayed: Date.now(),
+      isDead: false,
+      statuses: {},
+    },
+    "charId",
   );
+  if (!charId) throw new Error(`Failed to create character for user ${userId}`);
+  return charId;
 }
 
-export function GetCharacters(userId: number) {
-  return db.execute<Character>(
-    'SELECT charId, stateId, firstName, lastName, gender, x, y, z, heading, DATE_FORMAT(lastPlayed, "%d/%m/%Y") AS lastPlayed FROM characters WHERE userId = ? AND deleted IS NULL LIMIT ?',
-    [userId, CHARACTER_SLOTS],
+export async function GetCharacters(userId: number) {
+  const characters = await CDB.find<Character & { deleted?: number | string }>(
+    "characters",
+    { userId },
+    { sort: { field: "charId" }, limit: CHARACTER_SLOTS },
+  );
+
+  return characters
+    .filter((character) => !character.deleted)
+    .map((character) => ({
+      charId: character.charId,
+      stateId: character.stateId,
+      firstName: character.firstName,
+      lastName: character.lastName,
+      gender: character.gender,
+      x: character.x,
+      y: character.y,
+      z: character.z,
+      heading: character.heading,
+      lastPlayed: formatDate(character.lastPlayed),
+    }));
+}
+
+function saveOneCharacter(values: any[]) {
+  const [x, y, z, heading, isDead, health, armour, statuses, charId] = values;
+
+  return CDB.updateOne(
+    "characters",
+    { charId },
+    { x, y, z, heading, isDead, lastPlayed: Date.now(), health, armour, statuses },
   );
 }
 
 export function SaveCharacterData(values: any[] | any[][], batch?: boolean) {
-  const query =
-    'UPDATE characters SET x = ?, y = ?, z = ?, heading = ?, isDead = ?, lastPlayed = CURRENT_TIMESTAMP(), health = ?, armour = ?, statuses = ? WHERE charId = ?';
-
-  return batch ? db.batch(query, values) : db.update(query, values);
+  return batch ? Promise.all((values as any[][]).map(saveOneCharacter)) : saveOneCharacter(values as any[]);
 }
 
 export async function DeleteCharacter(charId: number) {
-  return (await db.update('UPDATE characters SET deleted = curdate() WHERE charId = ?', [charId])) === 1;
+  return CDB.updateOne("characters", { charId }, { deleted: Date.now() });
 }
 
-export function GetCharacterMetadata(charId: number) {
-  return db.row<{
-    isDead: number;
+export async function GetCharacterMetadata(charId: number) {
+  const row = await CDB.findOne<{
+    isDead: boolean | number;
     gender: string;
     dateOfBirth: string;
     phoneNumber: string;
     health: number;
     armour: number;
     statuses: Dict<number>;
-  }>(
-    'SELECT isDead, gender, DATE_FORMAT(dateOfBirth, "%d/%m/%Y") AS dateOfBirth, phoneNumber, health, armour, statuses FROM characters WHERE charId = ?',
-    [charId],
-  );
+  }>("characters", { charId });
+
+  if (!row) return null;
+
+  return {
+    isDead: row.isDead ? 1 : 0,
+    gender: row.gender,
+    dateOfBirth: formatDate(row.dateOfBirth),
+    phoneNumber: row.phoneNumber,
+    health: row.health,
+    armour: row.armour,
+    statuses: row.statuses || {},
+  };
 }
 
 export function GetStatuses() {
-  return db.query<OxStatus>('SELECT name, `default`, onTick FROM ox_statuses');
+  return CDB.find<OxStatus>("ox_statuses", undefined, { sort: { field: "name" } });
 }
 
 export function GetLicenses() {
-  return db.query<Dict<OxLicense>>('SELECT name, label FROM ox_licenses');
+  return CDB.find<Dict<OxLicense>>("ox_licenses", undefined, { sort: { field: "name" } });
 }
 
 export function GetLicense(name: string) {
-  return db.row<OxLicense>('SELECT name, label FROM ox_licenses WHERE name = ?', [name]);
+  return CDB.findOne<OxLicense>("ox_licenses", { name });
 }
 
 export function GetCharacterLicenses(charId: number) {
-  return db.query<{ name: string; data: CharacterLicense }>(
-    'SELECT name, data FROM character_licenses WHERE charId = ?',
-    [charId],
-  );
+  return CDB.find<{ name: string; data: CharacterLicense }>("character_licenses", { charId });
 }
 
 export function AddCharacterLicense(charId: number, name: string, data: CharacterLicense) {
-  return db.update('INSERT INTO character_licenses (charId, name, data) VALUES (?, ?, ?)', [
-    charId,
-    name,
-    JSON.stringify(data),
-  ]);
+  return CDB.insertOne("character_licenses", { charId, name, data });
 }
 
 export function RemoveCharacterLicense(charId: number, name: string) {
-  return db.update('DELETE FROM character_licenses WHERE charId = ? AND name = ?', [charId, name]);
+  return CDB.delete("character_licenses", { charId, name });
 }
 
-export function UpdateCharacterLicense(charId: number, name: string, key: string, value: any) {
-  const params = [`$.${key}`, name, charId];
+export async function UpdateCharacterLicense(charId: number, name: string, key: string, value: any) {
+  const license = await CDB.findOne<{ data: CharacterLicense }>("character_licenses", { charId, name });
+  if (!license) return 0;
 
-  if (value == null)
-    return db.update('UPDATE character_licenses SET data = JSON_REMOVE(data, ?) WHERE name = ? AND charId = ?', params);
+  const data = { ...(license.data || {}) };
+  if (value == null) delete data[key];
+  else data[key] = value;
 
-  params.splice(1, 0, value);
-
-  return db.update('UPDATE character_licenses SET data = JSON_SET(data, ?, ?) WHERE name = ? AND charId = ?', params);
+  return (await CDB.updateOne("character_licenses", { charId, name }, { data })) ? 1 : 0;
 }
 
-export function GetCharIdFromStateId(stateId: string) {
-  return db.column<number>('SELECT charId FROM characters WHERE stateId = ?', [stateId]);
+export async function GetCharIdFromStateId(stateId: string) {
+  return (await CDB.findOne<{ charId: number }>("characters", { stateId }))?.charId ?? null;
 }
 
 export async function UpdateUserTokens(userId: number, tokens: string[]) {
   if (tokens.length === 0) return;
 
-  const parameters = tokens.map((token) => [userId, token]);
-
-  await db.batch('INSERT IGNORE INTO user_tokens (userId, token) VALUES (?, ?)', parameters);
+  await Promise.all(
+    tokens.map(async (token) => {
+      if (!(await CDB.exists("user_tokens", { userId, token }))) await CDB.insertOne("user_tokens", { userId, token });
+    }),
+  );
 }
 
 export async function IsUserBanned(userId: number): Promise<BanDetails | undefined> {
-  const banDetails = await db.query<BanDetails>(
-    `SELECT bu.reason, bu.banned_at, bu.unban_at, bu.userId, ut.token
-       FROM user_tokens ut
-       JOIN banned_users bu ON ut.userId = bu.userId
-       WHERE ut.userId = ?
-       GROUP BY bu.userId`,
-    [userId],
-  );
+  const ban = await CDB.findOne<BanDetails>("banned_users", { userId });
+  if (!ban) return;
 
-  if (!banDetails?.[0]) return;
-
-  const currentDate = new Date();
-  const expiredBans = banDetails.filter((ban) => ban.unban_at && new Date(ban.unban_at) <= currentDate);
-
-  if (expiredBans.length > 0) {
-    await db.query(`DELETE FROM banned_users WHERE userId IN (?)`, [expiredBans.map((ban) => ban.userId)]);
+  if (ban.unban_at && new Date(ban.unban_at).getTime() <= Date.now()) {
+    await CDB.deleteOne("banned_users", { userId });
     return;
   }
 
-  return banDetails[0];
+  const token = (await CDB.findOne<{ token: string }>("user_tokens", { userId }))?.token;
+  return { ...ban, token };
 }
 
 export async function BanUser(userId: number, reason?: string, hours?: number) {
-  const success = await db.update(
-    'INSERT INTO banned_users (userId, banned_at, unban_at, reason) VALUES (?, NOW(), DATE_ADD(NOW(), INTERVAL ? HOUR), ?)',
-    [userId, hours, reason],
+  const banned_at = Date.now();
+  const unban_at = hours ? banned_at + hours * 60 * 60 * 1000 : undefined;
+  const success = await CDB.update(
+    "banned_users",
+    { userId },
+    { userId, banned_at, unban_at, reason },
+    { upsert: true },
   );
 
   if (!success) {
@@ -159,18 +191,11 @@ export async function BanUser(userId: number, reason?: string, hours?: number) {
 
   const playerId = OxPlayer.getFromUserId(userId)?.source as string;
 
-  if (playerId) {
-    const banned_at = Date.now();
-    const unban_at = banned_at + (hours ? hours * 60 * 60 * 1000 : 0);
-
-    DropPlayer(playerId, OxPlayer.formatBanReason({ userId, banned_at, unban_at, reason }));
-  }
+  if (playerId) DropPlayer(playerId, OxPlayer.formatBanReason({ userId, banned_at, unban_at, reason }));
 
   return true;
 }
 
 export async function UnbanUser(userId: number) {
-  const success = await db.update('DELETE FROM banned_users WHERE userId = ?', [userId]);
-
-  return success;
+  return CDB.delete("banned_users", { userId });
 }

@@ -1,10 +1,8 @@
-import { db } from 'db';
-import type { OxAccountPermissions, OxAccountRole } from 'types';
-import { SelectAccount } from './db';
-import { GetGroup } from 'groups';
-import type { OxPlayer } from 'player/class';
-
-type OxAccountMetadataRow = OxAccountPermissions & { id?: number; name?: OxAccountRole };
+import { defaultAccountRoles } from "db/chiliaddb";
+import type { OxAccountPermissions, OxAccountRole } from "types";
+import { SelectAccount } from "./db";
+import { GetGroup } from "groups";
+import type { OxPlayer } from "player/class";
 
 const accountRoles = {} as Record<string, OxAccountPermissions>;
 
@@ -46,20 +44,16 @@ export async function CanPerformAction(
 }
 
 async function LoadRoles() {
-  const roles = await db.execute<OxAccountMetadataRow>('SELECT * FROM account_roles');
+  const roles = defaultAccountRoles;
 
-  if (!roles[0]) return;
+  roles.forEach(({ id, name, ...permissions }) => {
+    const roleName = name.toLowerCase() as OxAccountRole;
 
-  roles.forEach((role) => {
-    const roleName = (role.name as string).toLowerCase() as OxAccountRole;
-    delete role.name;
-    delete role.id;
-
-    accountRoles[roleName] = role;
-    GlobalState[`accountRole.${roleName}`] = role;
+    accountRoles[roleName] = permissions;
+    GlobalState[`accountRole.${roleName}`] = permissions;
   });
 
-  GlobalState['accountRoles'] = Object.keys(accountRoles);
+  GlobalState["accountRoles"] = Object.keys(accountRoles);
 }
 
 setImmediate(LoadRoles);

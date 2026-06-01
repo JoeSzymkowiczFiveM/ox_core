@@ -1,6 +1,6 @@
-import { db } from '../db';
-import type { VehicleProperties } from '@overextended/ox_lib';
-import { DEFAULT_VEHICLE_STORE } from 'config';
+import { CDB } from "../db/chiliaddb";
+import type { VehicleProperties } from "@overextended/ox_lib";
+import { DEFAULT_VEHICLE_STORE } from "config";
 
 export type VehicleRow = {
   id: number;
@@ -13,48 +13,47 @@ export type VehicleRow = {
 };
 
 if (DEFAULT_VEHICLE_STORE)
-  setImmediate(() => db.query('UPDATE vehicles SET `stored` = ? WHERE `stored` IS NULL', [DEFAULT_VEHICLE_STORE]));
+  setImmediate(() => CDB.update("vehicles", { stored: null }, { stored: DEFAULT_VEHICLE_STORE }));
 
 export async function IsPlateAvailable(plate: string) {
-  return !(await db.exists('SELECT 1 FROM vehicles WHERE plate = ?', [plate]));
+  return !(await CDB.exists("vehicles", { plate }));
 }
 
 export async function IsVinAvailable(plate: string) {
-  return !(await db.exists('SELECT 1 FROM vehicles WHERE vin = ?', [plate]));
+  return !(await CDB.exists("vehicles", { vin: plate }));
 }
 
-export async function GetStoredVehicleFromId(id: number | string, column = 'id') {
-  const row = await db.row<VehicleRow>(
-    `SELECT id, owner, \`group\`, plate, vin, model, data FROM vehicles WHERE ${column} = ? AND \`stored\` IS NOT NULL`,
-    [id],
-  );
+export async function GetStoredVehicleFromId(id: number | string, column = "id") {
+  const row = await CDB.findOne<VehicleRow & { stored?: string | null }>("vehicles", { [column]: id });
 
-  if (row && typeof row.data === 'string') {
+  if (!row?.stored) return null;
+
+  if (row && typeof row.data === "string") {
     console.warn(
-      'vehicle.data was selected from the database as a string rather than JSON.\nLet us know if this warning occurred..',
+      "vehicle.data was selected from the datastore as a string rather than an object. Attempting to decode it.",
     );
     row.data = JSON.parse(row.data);
   }
 
-  return row;
+  return row as VehicleRow & { stored?: string };
 }
 
 export async function SetVehicleColumn(id: number | void, column: string, value: any) {
   if (!id) return;
 
-  return (await db.update(`UPDATE vehicles SET \`${column}\` = ? WHERE id = ?`, [value, id])) === 1;
+  return CDB.updateOne("vehicles", { id }, { [column]: value });
 }
 
-export function SaveVehicleData(
-  values: any, // -.-
-  batch?: boolean,
-) {
-  const query = 'UPDATE vehicles SET `stored` = ?, data = ? WHERE id = ?';
-
-  return batch ? db.batch(query, values) : db.update(query, values);
+function saveOneVehicle(values: any[]) {
+  const [stored, data, id] = values;
+  return CDB.updateOne("vehicles", { id }, { stored, data });
 }
 
-export function CreateNewVehicle(
+export function SaveVehicleData(values: any, batch?: boolean) {
+  return batch ? Promise.all((values as any[][]).map(saveOneVehicle)) : saveOneVehicle(values as any[]);
+}
+
+export async function CreateNewVehicle(
   plate: string,
   vin: string,
   owner: number | null,
@@ -64,12 +63,15 @@ export function CreateNewVehicle(
   data: object,
   stored: string | null,
 ) {
-  return db.insert(
-    'INSERT INTO vehicles (plate, vin, owner, `group`, model, class, data, `stored`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [plate, vin, owner, group, model, vehicleClass, JSON.stringify(data), stored],
+  const id = await CDB.insertOne(
+    "vehicles",
+    { plate, vin, owner, group, model, class: vehicleClass, data, stored },
+    "id",
   );
+  if (!id) throw new Error(`Failed to create vehicle ${plate}/${vin}`);
+  return id;
 }
 
 export async function DeleteVehicle(id: number) {
-  return (await db.update('DELETE FROM vehicles WHERE id = ?', [id])) === 1;
+  return CDB.deleteOne("vehicles", { id });
 }

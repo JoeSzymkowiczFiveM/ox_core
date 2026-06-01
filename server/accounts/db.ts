@@ -1,37 +1,31 @@
-import { getRandomInt } from '@overextended/ox_lib';
-import { OxAccount } from 'accounts/class';
-import { type Connection, GetConnection, db } from 'db';
-import { OxPlayer } from 'player/class';
-import type { OxAccountMetadata, OxAccountRole, OxAccountUserMetadata, OxCreateInvoice } from 'types';
-import locales from '../../common/locales';
-import { CanPerformAction } from './roles';
+import { getRandomInt } from "@overextended/ox_lib";
+import { OxAccount } from "accounts/class";
+import { CDB } from "db/chiliaddb";
+import { OxPlayer } from "player/class";
+import type { OxAccountMetadata, OxAccountUserMetadata, OxCreateInvoice } from "types";
+import locales from "../../common/locales";
+import { CanPerformAction } from "./roles";
 
-const addBalance = 'UPDATE accounts SET balance = balance + ? WHERE id = ?';
-const removeBalance = 'UPDATE accounts SET balance = balance - ? WHERE id = ?';
-const safeRemoveBalance = `${removeBalance} AND (balance - ?) >= 0`;
-const addTransaction =
-  'INSERT INTO accounts_transactions (actorId, fromId, toId, amount, message, note, fromBalance, toBalance) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
-const getBalance = 'SELECT balance FROM accounts WHERE id = ?';
-const doesAccountExist = 'SELECT 1 FROM accounts WHERE id = ?';
-
-async function GenerateAccountId(conn: Connection) {
+async function GenerateAccountId() {
   const date = new Date();
   const year = date.getFullYear().toString().slice(-2);
-  const month = ('0' + (date.getMonth() + 1)).slice(-2);
+  const month = ("0" + (date.getMonth() + 1)).slice(-2);
   const baseId = Number(year + month) * 1e3;
 
   while (true) {
     const accountId = getRandomInt(10, 99) * 1e7 + baseId + getRandomInt(0, 9999);
-    const existingId = await conn.scalar<number>(doesAccountExist, [accountId]);
-
-    if (!existingId) return accountId;
+    if (await IsAccountIdAvailable(accountId)) return accountId;
   }
+}
+
+async function addTransaction(document: Record<string, any>) {
+  return CDB.insertOne("accounts_transactions", { ...document, date: Date.now() }, "id");
 }
 
 export async function UpdateBalance(
   accountId: number,
   amount: number,
-  action: 'add' | 'remove',
+  action: "add" | "remove",
   overdraw: boolean,
   message?: string,
   note?: string,
@@ -39,50 +33,36 @@ export async function UpdateBalance(
 ): Promise<{ success: boolean; message?: string }> {
   amount = Number.parseInt(String(amount));
 
-  if (isNaN(amount)) return { success: false, message: 'amount_not_number' };
+  if (isNaN(amount)) return { success: false, message: "amount_not_number" };
+  if (amount <= 0) return { success: false, message: "invalid_amount" };
 
-  if (amount <= 0) return { success: false, message: 'invalid_amount' };
+  const account = await SelectAccount(accountId);
+  if (!account) return { success: false, message: "no_balance" };
 
-  using conn = await GetConnection();
-  const balance = await conn.scalar<number>(getBalance, [accountId]);
+  const addAction = action === "add";
+  const newBalance = addAction ? account.balance + amount : account.balance - amount;
 
-  if (balance === null)
-    return {
-      success: false,
-      message: 'no_balance',
-    };
+  if (!addAction && !overdraw && newBalance < 0) return { success: false, message: "insufficient_balance" };
 
-  const addAction = action === 'add';
-  const success = addAction
-    ? await conn.update(addBalance, [amount, accountId])
-    : await conn.update(overdraw ? removeBalance : safeRemoveBalance, [amount, accountId, amount]);
-  if (!success)
-    return {
-      success: false,
-      message: 'insufficient_balance',
-    };
+  const success = await CDB.updateOne("accounts", { id: accountId }, { balance: newBalance });
+  if (!success) return { success: false, message: "insufficient_balance" };
 
-  !message && (message = locales(action === 'add' ? 'deposit' : 'withdraw'));
+  !message && (message = locales(action === "add" ? "deposit" : "withdraw"));
 
-  const didUpdate =
-    (await conn.update(addTransaction, [
-      actorId || null,
-      addAction ? null : accountId,
-      addAction ? accountId : null,
-      amount,
-      message,
-      note,
-      addAction ? null : balance - amount,
-      addAction ? balance + amount : null,
-    ])) === 1;
+  const didUpdate = await addTransaction({
+    actorId: actorId || null,
+    fromId: addAction ? null : accountId,
+    toId: addAction ? accountId : null,
+    amount,
+    message,
+    note,
+    fromBalance: addAction ? null : newBalance,
+    toBalance: addAction ? newBalance : null,
+  });
 
-  if (!didUpdate)
-    return {
-      success: false,
-      message: 'something_went_wrong',
-    };
+  if (!didUpdate) return { success: false, message: "something_went_wrong" };
 
-  emit('ox:updatedBalance', { accountId, amount, action });
+  emit("ox:updatedBalance", { accountId, amount, action });
 
   return { success: true };
 }
@@ -98,102 +78,83 @@ export async function PerformTransaction(
 ): Promise<{ success: boolean; message?: string }> {
   amount = Number.parseInt(String(amount));
 
-  if (isNaN(amount)) return { success: false, message: 'amount_not_number' };
+  if (isNaN(amount)) return { success: false, message: "amount_not_number" };
+  if (amount <= 0) return { success: false, message: "invalid_amount" };
 
-  if (amount <= 0) return { success: false, message: 'invalid_amount' };
+  const fromAccount = await SelectAccount(fromId);
+  const toAccount = await SelectAccount(toId);
 
-  using conn = await GetConnection();
+  if (!fromAccount || !toAccount) return { success: false, message: "no_balance" };
+  if (!overdraw && fromAccount.balance - amount < 0) return { success: false, message: "insufficient_balance" };
 
-  const fromBalance = await conn.scalar<number>(getBalance, [fromId]);
-  const toBalance = await conn.scalar<number>(getBalance, [toId]);
+  const fromBalance = fromAccount.balance - amount;
+  const toBalance = toAccount.balance + amount;
+  const removedBalance = await CDB.updateOne("accounts", { id: fromId }, { balance: fromBalance });
+  const addedBalance = removedBalance && (await CDB.updateOne("accounts", { id: toId }, { balance: toBalance }));
 
-  if (fromBalance === null || toBalance === null) return { success: false, message: 'no_balance' };
+  if (addedBalance) {
+    await addTransaction({
+      actorId,
+      fromId,
+      toId,
+      amount,
+      message: message ?? locales("transfer"),
+      note,
+      fromBalance,
+      toBalance,
+    });
 
-  await conn.beginTransaction();
+    emit("ox:transferredMoney", { fromId, toId, amount });
 
-  try {
-    const query = overdraw ? removeBalance : safeRemoveBalance;
-    const values = [amount, fromId];
-
-    if (!overdraw) values.push(amount);
-
-    const removedBalance = await conn.update(query, values);
-    const addedBalance = removedBalance && (await conn.update(addBalance, [amount, toId]));
-
-    if (addedBalance) {
-      await conn.execute(addTransaction, [
-        actorId,
-        fromId,
-        toId,
-        amount,
-        message ?? locales('transfer'),
-        note,
-        fromBalance - amount,
-        toBalance + amount,
-      ]);
-
-      emit('ox:transferredMoney', { fromId, toId, amount });
-
-      return { success: true };
-    }
-  } catch (e) {
-    console.error(`Failed to transfer $${amount} from account<${fromId}> to account<${toId}>`);
-    console.log(e);
+    return { success: true };
   }
 
-  conn.rollback();
-
-  return { success: false, message: 'something_went_wrong' };
+  return { success: false, message: "something_went_wrong" };
 }
 
-export async function SelectAccounts(column: 'owner' | 'group' | 'id', id: number | string) {
-  return db.execute<OxAccountMetadata>(`SELECT * FROM accounts WHERE \`${column}\` = ?`, [id]);
+export function SelectAccounts(column: "owner" | "group" | "id", id: number | string) {
+  return CDB.find<OxAccountMetadata>("accounts", { [column]: id });
 }
 
-export async function SelectDefaultAccountId(column: 'owner' | 'group' | 'id', id: number | string) {
-  return await db.column<number>(`SELECT id FROM accounts WHERE \`${column}\` = ? AND isDefault = 1`, [id]);
+export async function SelectDefaultAccountId(column: "owner" | "group" | "id", id: number | string) {
+  return (await CDB.findOne<OxAccountMetadata>("accounts", { [column]: id, isDefault: true }))?.id ?? null;
 }
 
-export async function SelectAccount(id: number) {
-  return db.single(await SelectAccounts('id', id));
+export function SelectAccount(id: number) {
+  return CDB.findOne<OxAccountMetadata>("accounts", { id });
 }
 
 export async function IsAccountIdAvailable(id: number) {
-  return !(await db.exists(doesAccountExist, [id]));
+  return !(await CDB.exists("accounts", { id }));
 }
 
 export async function CreateNewAccount(owner: string | number, label: string, isDefault?: boolean) {
-  using conn = await GetConnection();
+  const accountId = await GenerateAccountId();
+  const column = typeof owner === "string" ? "group" : "owner";
+  const result = await CDB.insertOne("accounts", {
+    id: accountId,
+    label,
+    [column]: owner,
+    balance: 0,
+    type: column === "group" ? "group" : "personal",
+    isDefault: isDefault || false,
+  });
 
-  const accountId = await GenerateAccountId(conn);
-  const column = typeof owner === 'string' ? 'group' : 'owner';
-  const result = await conn.update(
-    `INSERT INTO accounts (id, label, \`${column}\`, type, isDefault) VALUES (?, ?, ?, ?, ?)`,
-    [accountId, label, owner, column === 'group' ? 'group' : 'personal', isDefault || 0],
-  );
-
-  if (result && column === 'owner')
-    conn.execute('INSERT INTO accounts_access (accountId, charId, role) VALUE (?, ?, ?)', [accountId, owner, 'owner']);
+  if (result && column === "owner") await CDB.insertOne("accounts_access", { accountId, charId: owner, role: "owner" });
 
   return accountId;
 }
 
 export async function DeleteAccount(accountId: number): Promise<{ success: boolean; message?: string }> {
-  const success = await db.update(`UPDATE accounts SET \`type\` = 'inactive' WHERE id = ?`, [accountId]);
+  const success = await CDB.updateOne("accounts", { id: accountId }, { type: "inactive" });
 
-  if (!success)
-    return {
-      success: false,
-      message: 'something_went_wrong',
-    };
+  if (!success) return { success: false, message: "something_went_wrong" };
 
   return { success: true };
 }
 
-const selectAccountRole = 'SELECT role FROM accounts_access WHERE accountId = ? AND charId = ?';
-
-export function SelectAccountRole(accountId: number, charId: number) {
-  return db.column<OxAccountUserMetadata['role']>(selectAccountRole, [accountId, charId]);
+export async function SelectAccountRole(accountId: number, charId: number) {
+  return (await CDB.findOne<OxAccountUserMetadata>("accounts_access", { accountId, charId }))?.role ?? null;
 }
 
 export async function DepositMoney(
@@ -205,59 +166,42 @@ export async function DepositMoney(
 ): Promise<{ success: boolean; message?: string }> {
   amount = Number.parseInt(String(amount));
 
-  if (isNaN(amount)) return { success: false, message: 'amount_not_number' };
-
-  if (amount <= 0) return { success: false, message: 'invalid_amount' };
+  if (isNaN(amount)) return { success: false, message: "amount_not_number" };
+  if (amount <= 0) return { success: false, message: "invalid_amount" };
 
   const player = OxPlayer.get(playerId);
+  if (!player?.charId) return { success: false, message: "no_charid" };
 
-  if (!player?.charId)
-    return {
-      success: false,
-      message: 'no_charid',
-    };
+  const money = exports.ox_inventory.GetItemCount(playerId, "money");
+  if (amount > money) return { success: false, message: "insufficient_funds" };
 
-  const money = exports.ox_inventory.GetItemCount(playerId, 'money');
+  const account = await SelectAccount(accountId);
+  if (!account) return { success: false, message: "no_balance" };
 
-  if (amount > money) return { success: false, message: 'insufficient_funds' };
+  const role = await SelectAccountRole(accountId, player.charId);
+  if (!(await CanPerformAction(player, accountId, role, "deposit"))) return { success: false, message: "no_access" };
 
-  using conn = await GetConnection();
-  const balance = await conn.scalar<number>(getBalance, [accountId]);
+  const balance = account.balance + amount;
+  const affectedRows = await CDB.updateOne("accounts", { id: accountId }, { balance });
 
-  if (balance === null) return { success: false, message: 'no_balance' };
-
-  const role = await conn.scalar<OxAccountRole>(selectAccountRole, [accountId, player.charId]);
-
-  if (!(await CanPerformAction(player, accountId, role, 'deposit'))) return { success: false, message: 'no_access' };
-
-  await conn.beginTransaction();
-
-  const affectedRows = await conn.update(addBalance, [amount, accountId]);
-
-  if (!affectedRows || !exports.ox_inventory.RemoveItem(playerId, 'money', amount)) {
-    conn.rollback();
-    return {
-      success: false,
-      message: 'something_went_wrong',
-    };
+  if (!affectedRows || !exports.ox_inventory.RemoveItem(playerId, "money", amount)) {
+    return { success: false, message: "something_went_wrong" };
   }
 
-  await conn.execute(addTransaction, [
-    player.charId,
-    null,
-    accountId,
+  await addTransaction({
+    actorId: player.charId,
+    fromId: null,
+    toId: accountId,
     amount,
-    message ?? locales('deposit'),
+    message: message ?? locales("deposit"),
     note,
-    null,
-    balance + amount,
-  ]);
+    fromBalance: null,
+    toBalance: balance,
+  });
 
-  emit('ox:depositedMoney', { playerId, accountId, amount });
+  emit("ox:depositedMoney", { playerId, accountId, amount });
 
-  return {
-    success: true,
-  };
+  return { success: true };
 }
 
 export async function WithdrawMoney(
@@ -269,47 +213,39 @@ export async function WithdrawMoney(
 ): Promise<{ success: boolean; message?: string }> {
   amount = Number.parseInt(String(amount));
 
-  if (isNaN(amount)) return { success: false, message: 'amount_not_number' };
-
-  if (amount <= 0) return { success: false, message: 'invalid_amount' };
+  if (isNaN(amount)) return { success: false, message: "amount_not_number" };
+  if (amount <= 0) return { success: false, message: "invalid_amount" };
 
   const player = OxPlayer.get(playerId);
+  if (!player?.charId) return { success: false, message: "no_charId" };
 
-  if (!player?.charId) return { success: false, message: 'no_charId' };
+  const role = await SelectAccountRole(accountId, player.charId);
+  if (!(await CanPerformAction(player, accountId, role, "withdraw"))) return { success: false, message: "no_access" };
 
-  using conn = await GetConnection();
-  const role = await conn.scalar<OxAccountRole>(selectAccountRole, [accountId, player.charId]);
+  const account = await SelectAccount(accountId);
+  if (!account) return { success: false, message: "no_balance" };
 
-  if (!(await CanPerformAction(player, accountId, role, 'withdraw'))) return { success: false, message: 'no_access' };
+  const balance = account.balance - amount;
+  if (balance < 0) return { success: false, message: "insufficient_balance" };
 
-  const balance = await conn.scalar<number>(getBalance, [accountId]);
+  const affectedRows = await CDB.updateOne("accounts", { id: accountId }, { balance });
 
-  if (balance === null) return { success: false, message: 'no_balance' };
-
-  await conn.beginTransaction();
-
-  const affectedRows = await conn.update(safeRemoveBalance, [amount, accountId, amount]);
-
-  if (!affectedRows || !exports.ox_inventory.AddItem(playerId, 'money', amount)) {
-    conn.rollback();
-    return {
-      success: false,
-      message: 'something_went_wrong',
-    };
+  if (!affectedRows || !exports.ox_inventory.AddItem(playerId, "money", amount)) {
+    return { success: false, message: "something_went_wrong" };
   }
 
-  await conn.execute(addTransaction, [
-    player.charId,
-    accountId,
-    null,
+  await addTransaction({
+    actorId: player.charId,
+    fromId: accountId,
+    toId: null,
     amount,
-    message ?? locales('withdraw'),
+    message: message ?? locales("withdraw"),
     note,
-    balance - amount,
-    null,
-  ]);
+    fromBalance: balance,
+    toBalance: null,
+  });
 
-  emit('ox:withdrewMoney', { playerId, accountId, amount });
+  emit("ox:withdrewMoney", { playerId, accountId, amount });
 
   return { success: true };
 }
@@ -319,20 +255,11 @@ export async function UpdateAccountAccess(
   id: number,
   role?: string,
 ): Promise<{ success: boolean; message?: string }> {
-  if (!role) {
-    const success = await db.update('DELETE FROM accounts_access WHERE accountId = ? AND charId = ?', [accountId, id]);
+  const success = role
+    ? await CDB.update("accounts_access", { accountId, charId: id }, { accountId, charId: id, role }, { upsert: true })
+    : await CDB.delete("accounts_access", { accountId, charId: id });
 
-    if (!success) return { success: false, message: 'something_went_wrong' };
-
-    return { success: true };
-  }
-
-  const success = await db.update(
-    'INSERT INTO accounts_access (accountId, charId, role) VALUE (?, ?, ?) ON DUPLICATE KEY UPDATE role = VALUES(role)',
-    [accountId, id, role],
-  );
-
-  if (!success) return { success: false, message: 'something_went_wrong' };
+  if (!success) return { success: false, message: "something_went_wrong" };
 
   return { success: true };
 }
@@ -343,65 +270,61 @@ export async function UpdateInvoice(
 ): Promise<{ success: boolean; message?: string }> {
   const player = OxPlayer.getFromCharId(charId);
 
-  if (!player?.charId) return { success: false, message: 'no_charId' };
+  if (!player?.charId) return { success: false, message: "no_charId" };
 
-  const invoice = await db.row<{ amount: number; payerId?: number; fromAccount: number; toAccount: number }>(
-    'SELECT * FROM `accounts_invoices` WHERE `id` = ?',
-    [invoiceId],
-  );
+  const invoice = await CDB.findOne<{
+    id: number;
+    amount: number;
+    payerId?: number;
+    fromAccount: number;
+    toAccount: number;
+  }>("accounts_invoices", { id: invoiceId });
 
-  if (!invoice) return { success: false, message: 'no_invoice' };
-
-  if (invoice.payerId) return { success: false, message: 'invoice_paid' };
+  if (!invoice) return { success: false, message: "no_invoice" };
+  if (invoice.payerId) return { success: false, message: "invoice_paid" };
 
   const account = await OxAccount.get(invoice.toAccount);
-  const hasPermission = await account?.playerHasPermission(player.source as number, 'payInvoice');
+  const hasPermission = await account?.playerHasPermission(player.source as number, "payInvoice");
 
-  if (!hasPermission) return { success: false, message: 'no_permission' };
+  if (!hasPermission) return { success: false, message: "no_permission" };
 
   const updateReceiver = await UpdateBalance(
     invoice.toAccount,
     invoice.amount,
-    'remove',
+    "remove",
     false,
-    locales('invoice_payment'),
+    locales("invoice_payment"),
     undefined,
     charId,
   );
 
-  if (!updateReceiver.success) return { success: false, message: 'no_balance' };
+  if (!updateReceiver.success) return { success: false, message: "no_balance" };
 
   const updateSender = await UpdateBalance(
     invoice.fromAccount,
     invoice.amount,
-    'add',
+    "add",
     false,
-    locales('invoice_payment'),
+    locales("invoice_payment"),
     undefined,
     charId,
   );
 
-  if (!updateSender.success) return { success: false, message: 'no_balance' };
+  if (!updateSender.success) return { success: false, message: "no_balance" };
 
-  const invoiceUpdated = await db.update('UPDATE `accounts_invoices` SET `payerId` = ?, `paidAt` = ? WHERE `id` = ?', [
-    player.charId,
-    new Date(),
-    invoiceId,
-  ]);
+  const invoiceUpdated = await CDB.updateOne(
+    "accounts_invoices",
+    { id: invoiceId },
+    { payerId: player.charId, paidAt: Date.now() },
+  );
 
-  if (!invoiceUpdated)
-    return {
-      success: false,
-      message: 'invoice_not_updated',
-    };
+  if (!invoiceUpdated) return { success: false, message: "invoice_not_updated" };
 
   invoice.payerId = charId;
 
-  emit('ox:invoicePaid', invoice);
+  emit("ox:invoicePaid", invoice);
 
-  return {
-    success: true,
-  };
+  return { success: true };
 }
 
 export async function CreateInvoice({
@@ -412,47 +335,55 @@ export async function CreateInvoice({
   message,
   dueDate,
 }: OxCreateInvoice): Promise<{ success: boolean; message?: string }> {
-  if (isNaN(amount)) return { success: false, message: 'amount_not_number' };
-
-  if (amount <= 0) return { success: false, message: 'invalid_amount' };
+  if (isNaN(amount)) return { success: false, message: "amount_not_number" };
+  if (amount <= 0) return { success: false, message: "invalid_amount" };
 
   if (actorId) {
     const player = OxPlayer.getFromCharId(actorId);
 
-    if (!player?.charId) return { success: false, message: 'no_charid' };
+    if (!player?.charId) return { success: false, message: "no_charid" };
 
     const account = await OxAccount.get(fromAccount);
-    const hasPermission = await account?.playerHasPermission(player.source as number, 'sendInvoice');
+    const hasPermission = await account?.playerHasPermission(player.source as number, "sendInvoice");
 
-    if (!hasPermission) return { success: false, message: 'no_permission' };
+    if (!hasPermission) return { success: false, message: "no_permission" };
   }
 
   const targetAccount = await OxAccount.get(toAccount);
 
-  if (!targetAccount) return { success: false, message: 'no_target_account' };
+  if (!targetAccount) return { success: false, message: "no_target_account" };
 
-  const success = await db.insert(
-    'INSERT INTO accounts_invoices (`actorId`, `fromAccount`, `toAccount`, `amount`, `message`, `dueDate`) VALUES (?, ?, ?, ?, ?, ?)',
-    [actorId, fromAccount, toAccount, amount, message, dueDate],
+  const success = await CDB.insertOne(
+    "accounts_invoices",
+    {
+      actorId,
+      fromAccount,
+      toAccount,
+      amount,
+      message,
+      dueDate: new Date(dueDate).getTime(),
+      sentAt: Date.now(),
+    },
+    "id",
   );
 
-  if (!success) return { success: false, message: 'invoice_insert_error' };
+  if (!success) return { success: false, message: "invoice_insert_error" };
 
   return { success: true };
 }
 
 export async function DeleteInvoice(invoiceId: number): Promise<{ success: boolean; message?: string }> {
-  const success = await db.update('DELETE FROM `accounts_invoices` WHERE `id` = ?', [invoiceId]);
+  const success = await CDB.deleteOne("accounts_invoices", { id: invoiceId });
 
-  if (!success) return { success: false, message: 'invoice_delete_error' };
+  if (!success) return { success: false, message: "invoice_delete_error" };
 
   return { success: true };
 }
 
 export async function SetAccountType(accountId: number, type: string): Promise<{ success: boolean; message?: string }> {
-  const success = await db.update('UPDATE `accounts` SET `type` = ? WHERE `id` = ?', [type, accountId]);
+  const success = await CDB.updateOne("accounts", { id: accountId }, { type });
 
-  if (!success) return { success: false, message: 'update_account_error' };
+  if (!success) return { success: false, message: "update_account_error" };
 
   return { success: true };
 }

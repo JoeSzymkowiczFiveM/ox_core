@@ -51,7 +51,7 @@ createBuilder(
       client_scripts: [files.client],
       server_scripts: [files.server],
       files: ["lib/init.lua", "lib/client/**.lua", "locales/*.json", "common/data/*.json"],
-      dependencies: ["/server:12913", "/onesync"],
+      dependencies: ["/server:12913", "/onesync", "chiliaddb"],
       metadata: { node_version: "22" },
     });
   },
