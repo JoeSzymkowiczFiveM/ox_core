@@ -9,11 +9,23 @@ export type VehicleRow = {
   plate: string;
   vin: string;
   model: string;
-  data: { properties: Partial<VehicleProperties>; [key: string]: any };
+  data: { properties: Partial<VehicleProperties> | string; [key: string]: any } | string;
 };
 
 if (DEFAULT_VEHICLE_STORE)
   setImmediate(() => CDB.update("vehicles", { stored: null }, { stored: DEFAULT_VEHICLE_STORE }));
+
+function parseDatastoreObject<T extends object>(value: T | string | null | undefined): T | null {
+  if (!value) return null;
+  if (typeof value !== "string") return value;
+
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function IsPlateAvailable(plate: string) {
   return !(await CDB.exists("vehicles", { plate }));
@@ -28,12 +40,13 @@ export async function GetStoredVehicleFromId(id: number | string, column = "id")
 
   if (!row?.stored) return null;
 
-  if (row && typeof row.data === "string") {
-    console.warn(
-      "vehicle.data was selected from the datastore as a string rather than an object. Attempting to decode it.",
-    );
-    row.data = JSON.parse(row.data);
-  }
+  const data = parseDatastoreObject<Exclude<VehicleRow["data"], string>>(row.data);
+
+  if (!data) return null;
+
+  const properties = parseDatastoreObject<Partial<VehicleProperties>>(data.properties);
+  data.properties = properties || {};
+  row.data = data;
 
   return row as VehicleRow & { stored?: string };
 }

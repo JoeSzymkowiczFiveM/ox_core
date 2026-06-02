@@ -18,6 +18,18 @@ export type Vec3 = number[] | { x: number; y: number; z: number } | { buffer: an
 
 const setEntityOrphanMode = typeof SetEntityOrphanMode !== 'undefined' ? SetEntityOrphanMode : () => {};
 
+function parseVehicleProperties(properties?: Partial<VehicleProperties> | string | null): Partial<VehicleProperties> {
+  if (!properties) return {};
+  if (typeof properties !== 'string') return properties;
+
+  try {
+    const parsed = JSON.parse(properties);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 export class OxVehicle extends ClassInterface {
   script: string;
   plate: string;
@@ -181,7 +193,7 @@ export class OxVehicle extends ClassInterface {
     make: string,
     stored: string | null,
     metadata: Dict<any>,
-    properties: Partial<VehicleProperties>,
+    properties: Partial<VehicleProperties> | string,
     id?: number,
     owner?: number,
     group?: string,
@@ -195,7 +207,7 @@ export class OxVehicle extends ClassInterface {
     this.vin = vin;
     this.owner = owner;
     this.group = group;
-    this.#properties = properties;
+    this.#properties = parseVehicleProperties(properties);
     this.#metadata = metadata || {};
     this.#stored = stored;
 
@@ -227,7 +239,7 @@ export class OxVehicle extends ClassInterface {
   #getSaveData() {
     if (!this.id) return;
 
-    return [this.#stored, JSON.stringify({ ...this.#metadata, properties: this.#properties }), this.id];
+    return [this.#stored, { ...this.#metadata, properties: { ...this.#properties } }, this.id];
   }
 
   save() {
@@ -292,7 +304,7 @@ export class OxVehicle extends ClassInterface {
   setProperties(properties: Partial<VehicleProperties>, apply?: boolean) {
     if (!this.entity) return;
 
-    this.#properties = typeof properties === 'string' ? JSON.parse(properties) : properties;
+    this.#properties = parseVehicleProperties(properties);
 
     if (apply) setVehicleProperties(this.entity, this.#properties);
   }

@@ -14,7 +14,19 @@ export interface CreateVehicleData {
   owner?: number;
   group?: string;
   stored?: string;
-  properties?: Partial<VehicleProperties>;
+  properties?: Partial<VehicleProperties> | string;
+}
+
+function parseVehicleObject<T extends object>(value: T | string | null | undefined): T | null {
+  if (!value) return null;
+  if (typeof value !== 'string') return value;
+
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function CreateVehicle(
@@ -55,8 +67,8 @@ export async function CreateVehicle(
         ? data.plate
         : await OxVehicle.generatePlate();
 
-  const metadata = data.data || ({} as { properties?: Partial<VehicleProperties>; [key: string]: any });
-  metadata.properties = data.properties || data.data?.properties || ({} as Partial<VehicleProperties>);
+  const metadata = parseVehicleObject(data.data) || ({} as { properties?: Partial<VehicleProperties> | string; [key: string]: any });
+  metadata.properties = parseVehicleObject(data.properties) || parseVehicleObject(metadata.properties) || {};
 
   if (!data.id && data.vin && isOwned) {
     data.id = await CreateNewVehicle(
@@ -71,7 +83,7 @@ export async function CreateVehicle(
     );
   }
 
-  const properties = data.properties || metadata.properties || ({} as Partial<VehicleProperties>);
+  const properties = parseVehicleObject(data.properties) || parseVehicleObject(metadata.properties) || {};
   delete metadata.properties;
 
   const vehicle = new OxVehicle(
