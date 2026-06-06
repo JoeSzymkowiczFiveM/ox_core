@@ -326,6 +326,30 @@ export class OxPlayer extends ClassInterface {
     return true;
   }
 
+  /** Sets multiple status values and syncs them in a single event. */
+  setStatuses(statuses: Dict<number>) {
+    const updatedStatuses: Dict<number> = {};
+    let updated = false;
+
+    for (const statusName in statuses) {
+      if (Statuses[statusName] === undefined) continue;
+
+      const value = statuses[statusName];
+      if (typeof value !== 'number') continue;
+
+      const newValue = value < 0 ? 0 : value > 100 ? 100 : Number.parseFloat(value.toPrecision(8));
+      this.#statuses[statusName] = newValue;
+      updatedStatuses[statusName] = newValue;
+      updated = true;
+    }
+
+    if (!updated) return;
+
+    this.emit('ox:setPlayerStatuses', updatedStatuses, true);
+
+    return true;
+  }
+
   /** Returns the current value of a status. */
   getStatus(statusName: string) {
     return this.#statuses[statusName];

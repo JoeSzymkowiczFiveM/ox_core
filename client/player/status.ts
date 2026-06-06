@@ -1,5 +1,7 @@
 import { OxPlayer, Statuses } from 'player';
 
+const STATUS_UPDATE_INTERVAL = GetConvarInt('ox:statusUpdateInterval', 1000);
+
 function UpdateStatuses() {
   for (const name in Statuses) {
     const status = Statuses[name];
@@ -21,5 +23,5 @@ on('ox:playerLoaded', () => {
     if (!OxPlayer.isLoaded) return clearInterval(id);
 
     UpdateStatuses();
-  }, 1000);
+  }, STATUS_UPDATE_INTERVAL);
 });
