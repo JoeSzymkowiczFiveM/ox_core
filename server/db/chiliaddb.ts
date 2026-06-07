@@ -1,4 +1,4 @@
-import type { Dict, OxAccountPermissions, OxLicense, OxStatus } from "types";
+import type { Dict, OxAccountPermissions, OxLicense, OxStatus } from 'types';
 
 declare const exports: any;
 
@@ -9,43 +9,43 @@ type ChiliadFindOptions = {
   excludeIndexes?: boolean;
   excludeFields?: Dict<boolean>;
   includeFields?: Dict<boolean>;
-  sort?: { field: string; order?: "asc" | "desc" };
+  sort?: { field: string; order?: 'asc' | 'desc' };
 };
 
 const COLLECTIONS = [
-  "users",
-  "characters",
-  "user_tokens",
-  "banned_users",
-  "ox_statuses",
-  "ox_licenses",
-  "character_licenses",
-  "ox_groups",
-  "character_groups",
-  "accounts",
-  "accounts_access",
-  "accounts_transactions",
-  "accounts_invoices",
-  "vehicles",
+  'users',
+  'characters',
+  'user_tokens',
+  'banned_users',
+  'ox_statuses',
+  'ox_licenses',
+  'character_licenses',
+  'ox_groups',
+  'character_groups',
+  'accounts',
+  'accounts_access',
+  'accounts_transactions',
+  'accounts_invoices',
+  'vehicles',
 ] as const;
 
 let readyPromise: Promise<void> | undefined;
 
 const defaultStatuses: OxStatus[] = [
-  { name: "hunger", default: 0, onTick: 0.02 },
-  { name: "thirst", default: 0, onTick: 0.05 },
-  { name: "stress", default: 0, onTick: -0.1 },
+  { name: 'hunger', default: 0, onTick: 0.02 },
+  { name: 'thirst', default: 0, onTick: 0.05 },
+  { name: 'stress', default: 0, onTick: -0.1 },
 ];
 
 const defaultLicenses: OxLicense[] = [
-  { name: "weapon", label: "Weapon License" },
-  { name: "driver", label: "Driver's License" },
+  { name: 'weapon', label: 'Weapon License' },
+  { name: 'driver', label: "Driver's License" },
 ];
 
 export const defaultAccountRoles: (OxAccountPermissions & { name: string; id: number })[] = [
   {
     id: 1,
-    name: "viewer",
+    name: 'viewer',
     deposit: false,
     withdraw: false,
     addUser: false,
@@ -60,7 +60,7 @@ export const defaultAccountRoles: (OxAccountPermissions & { name: string; id: nu
   },
   {
     id: 2,
-    name: "contributor",
+    name: 'contributor',
     deposit: true,
     withdraw: false,
     addUser: false,
@@ -75,7 +75,7 @@ export const defaultAccountRoles: (OxAccountPermissions & { name: string; id: nu
   },
   {
     id: 3,
-    name: "manager",
+    name: 'manager',
     deposit: true,
     withdraw: true,
     addUser: true,
@@ -90,7 +90,7 @@ export const defaultAccountRoles: (OxAccountPermissions & { name: string; id: nu
   },
   {
     id: 4,
-    name: "owner",
+    name: 'owner',
     deposit: true,
     withdraw: true,
     addUser: true,
@@ -114,7 +114,7 @@ function wait(ms: number) {
 }
 
 async function waitUntilLoaded() {
-  while (GetResourceState("chiliaddb") !== "started" || !cdb()?.loaded()) {
+  while (GetResourceState('chiliaddb') !== 'started' || !cdb()?.loaded()) {
     await wait(50);
   }
 }
@@ -126,7 +126,7 @@ async function ensureCollection(collection: string) {
 async function seedStaticData() {
   for (const status of defaultStatuses) {
     cdb().update({
-      collection: "ox_statuses",
+      collection: 'ox_statuses',
       query: { name: status.name },
       update: status,
       options: { upsert: true },
@@ -135,7 +135,7 @@ async function seedStaticData() {
 
   for (const license of defaultLicenses) {
     cdb().update({
-      collection: "ox_licenses",
+      collection: 'ox_licenses',
       query: { name: license.name },
       update: license,
       options: { upsert: true },
@@ -145,18 +145,18 @@ async function seedStaticData() {
 
 async function ensureIndexes() {
   const indexes: { collection: string; fields: string[]; unique?: boolean }[] = [
-    { collection: "users", fields: ["license2"] },
-    { collection: "characters", fields: ["stateId"], unique: true },
-    { collection: "characters", fields: ["userId"] },
-    { collection: "character_groups", fields: ["charId", "name"], unique: true },
-    { collection: "character_licenses", fields: ["charId", "name"], unique: true },
-    { collection: "accounts", fields: ["owner"] },
-    { collection: "accounts", fields: ["group"] },
-    { collection: "accounts_access", fields: ["accountId", "charId"], unique: true },
-    { collection: "vehicles", fields: ["plate"], unique: true },
-    { collection: "vehicles", fields: ["vin"], unique: true },
-    { collection: "user_tokens", fields: ["userId", "token"], unique: true },
-    { collection: "banned_users", fields: ["userId"], unique: true },
+    { collection: 'users', fields: ['license2'] },
+    { collection: 'characters', fields: ['stateId'], unique: true },
+    { collection: 'characters', fields: ['userId'] },
+    { collection: 'character_groups', fields: ['charId', 'name'], unique: true },
+    { collection: 'character_licenses', fields: ['charId', 'name'], unique: true },
+    { collection: 'accounts', fields: ['owner'] },
+    { collection: 'accounts', fields: ['group'] },
+    { collection: 'accounts_access', fields: ['accountId', 'charId'], unique: true },
+    { collection: 'vehicles', fields: ['plate'], unique: true },
+    { collection: 'vehicles', fields: ['vin'], unique: true },
+    { collection: 'user_tokens', fields: ['userId', 'token'], unique: true },
+    { collection: 'banned_users', fields: ['userId'], unique: true },
   ];
 
   for (const index of indexes) cdb().ensureIndex(index);
@@ -168,17 +168,17 @@ export async function Ready() {
     for (const collection of COLLECTIONS) await ensureCollection(collection);
     await ensureIndexes();
     await seedStaticData();
-    console.log("^2ChiliadDB datastore connection established for ox_core!^0");
+    console.log('^2ChiliadDB datastore connection established for ox_core!^0');
   })();
 
   return readyPromise;
 }
 
 export function formatDate(value?: string | number | Date) {
-  if (!value) return "";
+  if (!value) return '';
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
+  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
 }
 
 export const CDB = {
@@ -198,7 +198,10 @@ export const CDB = {
   async findOne<T = any>(collection: string, query?: Query, options?: ChiliadFindOptions): Promise<T | null> {
     await Ready();
     const result = cdb().findOne({ collection, query, options });
-    return result && result !== false ? result : null;
+
+    if (!result || result === false) return null;
+
+    return Array.isArray(result) ? (result[0] ?? null) : result;
   },
 
   async exists(collection: string, query: Query): Promise<boolean> {

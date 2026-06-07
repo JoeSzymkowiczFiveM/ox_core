@@ -62,11 +62,11 @@ addCommand<{ radius?: number; owned?: string }>(
 
     if (!args.radius && DeleteCurrentVehicle(ped)) return;
 
-    const [x,y,z] = GetEntityCoords(ped)
-    const vehicles: number[] = GetEntitiesInRadius(x, y, z, args.radius || 2, 2, false, [])
+    const [x, y, z] = GetEntityCoords(ped);
+    const vehicles: number[] = GetEntitiesInRadius(x, y, z, args.radius || 2, 2, false, []);
 
     vehicles.forEach((handle) => {
-      const vehicle = OxVehicle.getFromEntity(handle)
+      const vehicle = OxVehicle.getFromEntity(handle);
 
       if (!vehicle || !vehicle.owner) DeleteEntity(handle);
       else if (args.owned) {

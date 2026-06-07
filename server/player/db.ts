@@ -1,21 +1,21 @@
 import type { Character, Dict, OxStatus, CharacterLicense, OxLicense, BanDetails } from 'types';
 import { CHARACTER_SLOTS } from '../../common/config';
-import { CDB, formatDate } from "../db/chiliaddb";
+import { CDB, formatDate } from '../db/chiliaddb';
 import { OxPlayer } from './class';
 
 export async function GetUserIdFromIdentifier(identifier: string, offset?: number) {
-  const users = await CDB.find<{ userId: number }>("users", { license2: identifier }, { sort: { field: "userId" } });
+  const users = await CDB.find<{ userId: number }>('users', { license2: identifier }, { sort: { field: 'userId' } });
   return users[offset || 0]?.userId ?? null;
 }
 
 export async function CreateUser(username: string, { license2, steam, fivem, discord }: Dict<string>) {
-  const userId = await CDB.insertOne("users", { username, license2, steam, fivem, discord }, "userId");
+  const userId = await CDB.insertOne('users', { username, license2, steam, fivem, discord }, 'userId');
   if (!userId) throw new Error(`Failed to create user for ${license2}`);
   return userId;
 }
 
 export async function IsStateIdAvailable(stateId: string) {
-  return !(await CDB.exists("characters", { stateId }));
+  return !(await CDB.exists('characters', { stateId }));
 }
 
 export async function CreateCharacter(
@@ -28,7 +28,7 @@ export async function CreateCharacter(
   phoneNumber?: number,
 ) {
   const charId = await CDB.insertOne(
-    "characters",
+    'characters',
     {
       userId,
       stateId,
@@ -41,7 +41,7 @@ export async function CreateCharacter(
       isDead: false,
       statuses: {},
     },
-    "charId",
+    'charId',
   );
   if (!charId) throw new Error(`Failed to create character for user ${userId}`);
   return charId;
@@ -49,9 +49,9 @@ export async function CreateCharacter(
 
 export async function GetCharacters(userId: number) {
   const characters = await CDB.find<Character & { deleted?: number | string }>(
-    "characters",
+    'characters',
     { userId },
-    { sort: { field: "charId" }, limit: CHARACTER_SLOTS },
+    { sort: { field: 'charId' }, limit: CHARACTER_SLOTS },
   );
 
   return characters
@@ -74,7 +74,7 @@ function saveOneCharacter(values: any[]) {
   const [x, y, z, heading, isDead, health, armour, statuses, charId] = values;
 
   return CDB.updateOne(
-    "characters",
+    'characters',
     { charId },
     { x, y, z, heading, isDead, lastPlayed: Date.now(), health, armour, statuses },
   );
@@ -85,16 +85,16 @@ export function SaveCharacterData(values: any[] | any[][], batch?: boolean) {
 }
 
 export async function DeleteCharacter(charId: number) {
-  return CDB.updateOne("characters", { charId }, { deleted: Date.now() });
+  return CDB.updateOne('characters', { charId }, { deleted: Date.now() });
 }
 
 function parseStatuses(statuses?: Dict<number> | string | null): Dict<number> {
   if (!statuses) return {};
-  if (typeof statuses !== "string") return statuses;
+  if (typeof statuses !== 'string') return statuses;
 
   try {
     const parsed = JSON.parse(statuses);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
   } catch {
     return {};
   }
@@ -109,7 +109,7 @@ export async function GetCharacterMetadata(charId: number) {
     health: number;
     armour: number;
     statuses: Dict<number> | string;
-  }>("characters", { charId });
+  }>('characters', { charId });
 
   if (!row) return null;
 
@@ -125,42 +125,42 @@ export async function GetCharacterMetadata(charId: number) {
 }
 
 export function GetStatuses() {
-  return CDB.find<OxStatus>("ox_statuses", undefined, { sort: { field: "name" } });
+  return CDB.find<OxStatus>('ox_statuses', undefined, { sort: { field: 'name' } });
 }
 
 export function GetLicenses() {
-  return CDB.find<Dict<OxLicense>>("ox_licenses", undefined, { sort: { field: "name" } });
+  return CDB.find<Dict<OxLicense>>('ox_licenses', undefined, { sort: { field: 'name' } });
 }
 
 export function GetLicense(name: string) {
-  return CDB.findOne<OxLicense>("ox_licenses", { name });
+  return CDB.findOne<OxLicense>('ox_licenses', { name });
 }
 
 export function GetCharacterLicenses(charId: number) {
-  return CDB.find<{ name: string; data: CharacterLicense }>("character_licenses", { charId });
+  return CDB.find<{ name: string; data: CharacterLicense }>('character_licenses', { charId });
 }
 
 export function AddCharacterLicense(charId: number, name: string, data: CharacterLicense) {
-  return CDB.insertOne("character_licenses", { charId, name, data });
+  return CDB.insertOne('character_licenses', { charId, name, data });
 }
 
 export function RemoveCharacterLicense(charId: number, name: string) {
-  return CDB.delete("character_licenses", { charId, name });
+  return CDB.delete('character_licenses', { charId, name });
 }
 
 export async function UpdateCharacterLicense(charId: number, name: string, key: string, value: any) {
-  const license = await CDB.findOne<{ data: CharacterLicense }>("character_licenses", { charId, name });
+  const license = await CDB.findOne<{ data: CharacterLicense }>('character_licenses', { charId, name });
   if (!license) return 0;
 
   const data = { ...(license.data || {}) };
   if (value == null) delete data[key];
   else data[key] = value;
 
-  return (await CDB.updateOne("character_licenses", { charId, name }, { data })) ? 1 : 0;
+  return (await CDB.updateOne('character_licenses', { charId, name }, { data })) ? 1 : 0;
 }
 
 export async function GetCharIdFromStateId(stateId: string) {
-  return (await CDB.findOne<{ charId: number }>("characters", { stateId }))?.charId ?? null;
+  return (await CDB.findOne<{ charId: number }>('characters', { stateId }))?.charId ?? null;
 }
 
 export async function UpdateUserTokens(userId: number, tokens: string[]) {
@@ -168,21 +168,21 @@ export async function UpdateUserTokens(userId: number, tokens: string[]) {
 
   await Promise.all(
     tokens.map(async (token) => {
-      if (!(await CDB.exists("user_tokens", { userId, token }))) await CDB.insertOne("user_tokens", { userId, token });
+      if (!(await CDB.exists('user_tokens', { userId, token }))) await CDB.insertOne('user_tokens', { userId, token });
     }),
   );
 }
 
 export async function IsUserBanned(userId: number): Promise<BanDetails | undefined> {
-  const ban = await CDB.findOne<BanDetails>("banned_users", { userId });
+  const ban = await CDB.findOne<BanDetails>('banned_users', { userId });
   if (!ban) return;
 
   if (ban.unban_at && new Date(ban.unban_at).getTime() <= Date.now()) {
-    await CDB.deleteOne("banned_users", { userId });
+    await CDB.deleteOne('banned_users', { userId });
     return;
   }
 
-  const token = (await CDB.findOne<{ token: string }>("user_tokens", { userId }))?.token;
+  const token = (await CDB.findOne<{ token: string }>('user_tokens', { userId }))?.token;
   return { ...ban, token };
 }
 
@@ -190,7 +190,7 @@ export async function BanUser(userId: number, reason?: string, hours?: number) {
   const banned_at = Date.now();
   const unban_at = hours ? banned_at + hours * 60 * 60 * 1000 : undefined;
   const success = await CDB.update(
-    "banned_users",
+    'banned_users',
     { userId },
     { userId, banned_at, unban_at, reason },
     { upsert: true },
@@ -209,5 +209,5 @@ export async function BanUser(userId: number, reason?: string, hours?: number) {
 }
 
 export async function UnbanUser(userId: number) {
-  return CDB.delete("banned_users", { userId });
+  return CDB.delete('banned_users', { userId });
 }

@@ -1,4 +1,4 @@
-import { Ready } from "./chiliaddb";
+import { Ready } from './chiliaddb';
 
 export const pool = undefined;
 

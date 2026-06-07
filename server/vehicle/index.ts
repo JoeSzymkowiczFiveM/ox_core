@@ -67,7 +67,8 @@ export async function CreateVehicle(
         ? data.plate
         : await OxVehicle.generatePlate();
 
-  const metadata = parseVehicleObject(data.data) || ({} as { properties?: Partial<VehicleProperties> | string; [key: string]: any });
+  const metadata =
+    parseVehicleObject(data.data) || ({} as { properties?: Partial<VehicleProperties> | string; [key: string]: any });
   metadata.properties = parseVehicleObject(data.properties) || parseVehicleObject(metadata.properties) || {};
 
   if (!data.id && data.vin && isOwned) {

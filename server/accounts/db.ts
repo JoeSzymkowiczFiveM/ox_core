@@ -1,8 +1,8 @@
 import { getRandomInt } from '@overextended/ox_lib';
 import { OxAccount } from 'accounts/class';
-import { CDB } from "db/chiliaddb";
+import { CDB } from 'db/chiliaddb';
 import { OxPlayer } from 'player/class';
-import type { OxAccountMetadata, OxAccountUserMetadata, OxCreateInvoice } from "types";
+import type { OxAccountMetadata, OxAccountUserMetadata, OxCreateInvoice } from 'types';
 import locales from '../../common/locales';
 import { CanPerformAction } from './roles';
 
@@ -19,7 +19,7 @@ async function GenerateAccountId() {
 }
 
 async function addTransaction(document: Record<string, any>) {
-  return CDB.insertOne("accounts_transactions", { ...document, date: Date.now() }, "id");
+  return CDB.insertOne('accounts_transactions', { ...document, date: Date.now() }, 'id');
 }
 
 export async function UpdateBalance(
@@ -37,15 +37,15 @@ export async function UpdateBalance(
   if (amount <= 0) return { success: false, message: 'invalid_amount' };
 
   const account = await SelectAccount(accountId);
-  if (!account) return { success: false, message: "no_balance" };
+  if (!account) return { success: false, message: 'no_balance' };
 
   const addAction = action === 'add';
   const newBalance = addAction ? account.balance + amount : account.balance - amount;
 
-  if (!addAction && !overdraw && newBalance < 0) return { success: false, message: "insufficient_balance" };
+  if (!addAction && !overdraw && newBalance < 0) return { success: false, message: 'insufficient_balance' };
 
-  const success = await CDB.updateOne("accounts", { id: accountId }, { balance: newBalance });
-  if (!success) return { success: false, message: "insufficient_balance" };
+  const success = await CDB.updateOne('accounts', { id: accountId }, { balance: newBalance });
+  if (!success) return { success: false, message: 'insufficient_balance' };
 
   !message && (message = locales(action === 'add' ? 'deposit' : 'withdraw'));
 
@@ -60,7 +60,7 @@ export async function UpdateBalance(
     toBalance: addAction ? newBalance : null,
   });
 
-  if (!didUpdate) return { success: false, message: "something_went_wrong" };
+  if (!didUpdate) return { success: false, message: 'something_went_wrong' };
 
   emit('ox:updatedBalance', { accountId, amount, action });
 
@@ -84,13 +84,13 @@ export async function PerformTransaction(
   const fromAccount = await SelectAccount(fromId);
   const toAccount = await SelectAccount(toId);
 
-  if (!fromAccount || !toAccount) return { success: false, message: "no_balance" };
-  if (!overdraw && fromAccount.balance - amount < 0) return { success: false, message: "insufficient_balance" };
+  if (!fromAccount || !toAccount) return { success: false, message: 'no_balance' };
+  if (!overdraw && fromAccount.balance - amount < 0) return { success: false, message: 'insufficient_balance' };
 
   const fromBalance = fromAccount.balance - amount;
   const toBalance = toAccount.balance + amount;
-  const removedBalance = await CDB.updateOne("accounts", { id: fromId }, { balance: fromBalance });
-  const addedBalance = removedBalance && (await CDB.updateOne("accounts", { id: toId }, { balance: toBalance }));
+  const removedBalance = await CDB.updateOne('accounts', { id: fromId }, { balance: fromBalance });
+  const addedBalance = removedBalance && (await CDB.updateOne('accounts', { id: toId }, { balance: toBalance }));
 
   if (addedBalance) {
     await addTransaction({
@@ -98,13 +98,13 @@ export async function PerformTransaction(
       fromId,
       toId,
       amount,
-      message: message ?? locales("transfer"),
+      message: message ?? locales('transfer'),
       note,
       fromBalance,
       toBalance,
     });
 
-    emit("ox:transferredMoney", { fromId, toId, amount });
+    emit('ox:transferredMoney', { fromId, toId, amount });
 
     return { success: true };
   }
@@ -112,41 +112,41 @@ export async function PerformTransaction(
   return { success: false, message: 'something_went_wrong' };
 }
 
-export function SelectAccounts(column: "owner" | "group" | "id", id: number | string) {
-  return CDB.find<OxAccountMetadata>("accounts", { [column]: id });
+export function SelectAccounts(column: 'owner' | 'group' | 'id', id: number | string) {
+  return CDB.find<OxAccountMetadata>('accounts', { [column]: id });
 }
 
 export async function SelectDefaultAccountId(column: 'owner' | 'group' | 'id', id: number | string) {
-  return (await CDB.findOne<OxAccountMetadata>("accounts", { [column]: id, isDefault: true }))?.id ?? null;
+  return (await CDB.findOne<OxAccountMetadata>('accounts', { [column]: id, isDefault: true }))?.id ?? null;
 }
 
 export function SelectAccount(id: number) {
-  return CDB.findOne<OxAccountMetadata>("accounts", { id });
+  return CDB.findOne<OxAccountMetadata>('accounts', { id });
 }
 
 export async function IsAccountIdAvailable(id: number) {
-  return !(await CDB.exists("accounts", { id }));
+  return !(await CDB.exists('accounts', { id }));
 }
 
 export async function CreateNewAccount(owner: string | number, label: string, isDefault?: boolean) {
   const accountId = await GenerateAccountId();
   const column = typeof owner === 'string' ? 'group' : 'owner';
-  const result = await CDB.insertOne("accounts", {
+  const result = await CDB.insertOne('accounts', {
     id: accountId,
     label,
     [column]: owner,
     balance: 0,
-    type: column === "group" ? "group" : "personal",
+    type: column === 'group' ? 'group' : 'personal',
     isDefault: isDefault || false,
   });
 
-  if (result && column === "owner") await CDB.insertOne("accounts_access", { accountId, charId: owner, role: "owner" });
+  if (result && column === 'owner') await CDB.insertOne('accounts_access', { accountId, charId: owner, role: 'owner' });
 
   return accountId;
 }
 
 export async function DeleteAccount(accountId: number): Promise<{ success: boolean; message?: string }> {
-  const success = await CDB.updateOne("accounts", { id: accountId }, { type: "inactive" });
+  const success = await CDB.updateOne('accounts', { id: accountId }, { type: 'inactive' });
 
   if (!success) return { success: false, message: 'something_went_wrong' };
 
@@ -154,7 +154,7 @@ export async function DeleteAccount(accountId: number): Promise<{ success: boole
 }
 
 export async function SelectAccountRole(accountId: number, charId: number) {
-  return (await CDB.findOne<OxAccountUserMetadata>("accounts_access", { accountId, charId }))?.role ?? null;
+  return (await CDB.findOne<OxAccountUserMetadata>('accounts_access', { accountId, charId }))?.role ?? null;
 }
 
 export async function DepositMoney(
@@ -170,19 +170,19 @@ export async function DepositMoney(
   if (amount <= 0) return { success: false, message: 'invalid_amount' };
 
   const player = OxPlayer.get(playerId);
-  if (!player?.charId) return { success: false, message: "no_charid" };
+  if (!player?.charId) return { success: false, message: 'no_charid' };
 
   const money = exports.ox_inventory.GetItemCount(playerId, 'money');
-  if (amount > money) return { success: false, message: "insufficient_funds" };
+  if (amount > money) return { success: false, message: 'insufficient_funds' };
 
   const account = await SelectAccount(accountId);
-  if (!account) return { success: false, message: "no_balance" };
+  if (!account) return { success: false, message: 'no_balance' };
 
   const role = await SelectAccountRole(accountId, player.charId);
-  if (!(await CanPerformAction(player, accountId, role, "deposit"))) return { success: false, message: "no_access" };
+  if (!(await CanPerformAction(player, accountId, role, 'deposit'))) return { success: false, message: 'no_access' };
 
   const balance = account.balance + amount;
-  const affectedRows = await CDB.updateOne("accounts", { id: accountId }, { balance });
+  const affectedRows = await CDB.updateOne('accounts', { id: accountId }, { balance });
 
   if (!affectedRows || !exports.ox_inventory.RemoveItem(playerId, 'money', amount)) {
     return { success: false, message: 'something_went_wrong' };
@@ -193,7 +193,7 @@ export async function DepositMoney(
     fromId: null,
     toId: accountId,
     amount,
-    message: message ?? locales("deposit"),
+    message: message ?? locales('deposit'),
     note,
     fromBalance: null,
     toBalance: balance,
@@ -220,15 +220,15 @@ export async function WithdrawMoney(
   if (!player?.charId) return { success: false, message: 'no_charId' };
 
   const role = await SelectAccountRole(accountId, player.charId);
-  if (!(await CanPerformAction(player, accountId, role, "withdraw"))) return { success: false, message: "no_access" };
+  if (!(await CanPerformAction(player, accountId, role, 'withdraw'))) return { success: false, message: 'no_access' };
 
   const account = await SelectAccount(accountId);
-  if (!account) return { success: false, message: "no_balance" };
+  if (!account) return { success: false, message: 'no_balance' };
 
   const balance = account.balance - amount;
-  if (balance < 0) return { success: false, message: "insufficient_balance" };
+  if (balance < 0) return { success: false, message: 'insufficient_balance' };
 
-  const affectedRows = await CDB.updateOne("accounts", { id: accountId }, { balance });
+  const affectedRows = await CDB.updateOne('accounts', { id: accountId }, { balance });
 
   if (!affectedRows || !exports.ox_inventory.AddItem(playerId, 'money', amount)) {
     return { success: false, message: 'something_went_wrong' };
@@ -239,7 +239,7 @@ export async function WithdrawMoney(
     fromId: accountId,
     toId: null,
     amount,
-    message: message ?? locales("withdraw"),
+    message: message ?? locales('withdraw'),
     note,
     fromBalance: balance,
     toBalance: null,
@@ -256,8 +256,8 @@ export async function UpdateAccountAccess(
   role?: string,
 ): Promise<{ success: boolean; message?: string }> {
   const success = role
-    ? await CDB.update("accounts_access", { accountId, charId: id }, { accountId, charId: id, role }, { upsert: true })
-    : await CDB.delete("accounts_access", { accountId, charId: id });
+    ? await CDB.update('accounts_access', { accountId, charId: id }, { accountId, charId: id, role }, { upsert: true })
+    : await CDB.delete('accounts_access', { accountId, charId: id });
 
   if (!success) return { success: false, message: 'something_went_wrong' };
 
@@ -278,9 +278,9 @@ export async function UpdateInvoice(
     payerId?: number;
     fromAccount: number;
     toAccount: number;
-  }>("accounts_invoices", { id: invoiceId });
+  }>('accounts_invoices', { id: invoiceId });
 
-  if (!invoice) return { success: false, message: "no_invoice" };
+  if (!invoice) return { success: false, message: 'no_invoice' };
   if (invoice.payerId) return { success: false, message: 'invoice_paid' };
 
   const account = await OxAccount.get(invoice.toAccount);
@@ -313,12 +313,12 @@ export async function UpdateInvoice(
   if (!updateSender.success) return { success: false, message: 'no_balance' };
 
   const invoiceUpdated = await CDB.updateOne(
-    "accounts_invoices",
+    'accounts_invoices',
     { id: invoiceId },
     { payerId: player.charId, paidAt: Date.now() },
   );
 
-  if (!invoiceUpdated) return { success: false, message: "invoice_not_updated" };
+  if (!invoiceUpdated) return { success: false, message: 'invoice_not_updated' };
 
   invoice.payerId = charId;
 
@@ -354,7 +354,7 @@ export async function CreateInvoice({
   if (!targetAccount) return { success: false, message: 'no_target_account' };
 
   const success = await CDB.insertOne(
-    "accounts_invoices",
+    'accounts_invoices',
     {
       actorId,
       fromAccount,
@@ -364,7 +364,7 @@ export async function CreateInvoice({
       dueDate: new Date(dueDate).getTime(),
       sentAt: Date.now(),
     },
-    "id",
+    'id',
   );
 
   if (!success) return { success: false, message: 'invoice_insert_error' };
@@ -373,7 +373,7 @@ export async function CreateInvoice({
 }
 
 export async function DeleteInvoice(invoiceId: number): Promise<{ success: boolean; message?: string }> {
-  const success = await CDB.deleteOne("accounts_invoices", { id: invoiceId });
+  const success = await CDB.deleteOne('accounts_invoices', { id: invoiceId });
 
   if (!success) return { success: false, message: 'invoice_delete_error' };
 
@@ -381,7 +381,7 @@ export async function DeleteInvoice(invoiceId: number): Promise<{ success: boole
 }
 
 export async function SetAccountType(accountId: number, type: string): Promise<{ success: boolean; message?: string }> {
-  const success = await CDB.updateOne("accounts", { id: accountId }, { type });
+  const success = await CDB.updateOne('accounts', { id: accountId }, { type });
 
   if (!success) return { success: false, message: 'update_account_error' };
 

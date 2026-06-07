@@ -82,7 +82,6 @@ async function OnPlayerDeath() {
   emit('ox_inventory:disarm');
   emit('ox:playerDeath');
 
-
   if (!DEATH_SYSTEM) return;
 
   for (let index = 0; index < anims.length; index++) await requestAnimDict(anims[index][0]);
@@ -120,7 +119,7 @@ AddStateBagChangeHandler('isDead', `player:${cache.serverId}`, async (_bagName: 
 });
 
 function ResetDeathState() {
-  emitNet('ox:playerRevived')
+  emitNet('ox:playerRevived');
 }
 
 on('ox:playerLogout', ResetDeathState);

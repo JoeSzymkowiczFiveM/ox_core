@@ -1,4 +1,4 @@
-import { defaultAccountRoles } from "db/chiliaddb";
+import { defaultAccountRoles } from 'db/chiliaddb';
 import type { OxAccountPermissions, OxAccountRole } from 'types';
 import { SelectAccount } from './db';
 import { GetGroup } from 'groups';
