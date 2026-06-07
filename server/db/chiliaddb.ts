@@ -183,20 +183,17 @@ export function formatDate(value?: string | number | Date) {
 
 export const CDB = {
   async find<T = any>(collection: string, query?: Query, options?: ChiliadFindOptions): Promise<T[]> {
-    await Ready();
     const result = cdb().find({ collection, query, options: { excludeIndexes: true, ...options } });
     if (!result || result === false) return [];
     return Array.isArray(result) ? result : Object.values(result);
   },
 
   async findRaw<T = any>(collection: string, query?: Query, options?: ChiliadFindOptions): Promise<Record<number, T>> {
-    await Ready();
     const result = cdb().find({ collection, query, options });
     return result && result !== false ? result : {};
   },
 
   async findOne<T = any>(collection: string, query?: Query, options?: ChiliadFindOptions): Promise<T | null> {
-    await Ready();
     const result = cdb().findOne({ collection, query, options });
 
     if (!result || result === false) return null;
@@ -205,41 +202,34 @@ export const CDB = {
   },
 
   async exists(collection: string, query: Query): Promise<boolean> {
-    await Ready();
     return cdb().exists({ collection, query }) === true;
   },
 
   async insertOne<T extends Dict<any>>(collection: string, document: T, selfInsertId?: string | string[]) {
-    await Ready();
     return cdb().insertOne({ collection, document, options: selfInsertId ? { selfInsertId } : undefined }) as
       | number
       | false;
   },
 
   async update(collection: string, query: Query, update: Query, options?: Query): Promise<number> {
-    await Ready();
     const result = cdb().update({ collection, query, update, options });
     return Array.isArray(result) ? result.length : result ? 1 : 0;
   },
 
   async updateOne(collection: string, query: Query, update: Query): Promise<boolean> {
-    await Ready();
     return !!cdb().updateOne({ collection, query, update });
   },
 
   async replaceOne(collection: string, query: Query, document: Query): Promise<boolean> {
-    await Ready();
     return !!cdb().replaceOne({ collection, query, document });
   },
 
   async delete(collection: string, query: Query): Promise<number> {
-    await Ready();
     const result = cdb().delete({ collection, query });
     return Array.isArray(result) ? result.length : result ? 1 : 0;
   },
 
   async deleteOne(collection: string, query: Query): Promise<boolean> {
-    await Ready();
     return !!cdb().deleteOne({ collection, query });
   },
 };
