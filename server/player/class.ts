@@ -490,7 +490,7 @@ export class OxPlayer extends ClassInterface {
 
   /** Adds the player to the player registry and starts character selection. */
   async setAsJoined() {
-    if (!OxPlayer.getFromUserId(this.userId)) {
+    if (!OxPlayer.get(this.source)) {
       OxPlayer.add(this.source, this);
       Player(this.source).state.set('userId', this.userId, true);
     }

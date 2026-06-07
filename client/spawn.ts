@@ -42,6 +42,23 @@ async function StartSession() {
   SetPlayerHealthRechargeMultiplier(cache.playerId, 0.0);
 }
 
+async function LoadSpawnCollision(x: number, y: number, z: number) {
+  RequestCollisionAtCoord(x, y, z);
+  FreezeEntityPosition(cache.ped, true);
+  SetEntityCoordsNoOffset(cache.ped, x, y, z, true, true, false);
+
+  const timeout = GetGameTimer() + 5000;
+
+  while (!HasCollisionLoadedAroundEntity(cache.ped) && GetGameTimer() < timeout) {
+    RequestCollisionAtCoord(x, y, z);
+    await sleep(0);
+  }
+
+  const [hasGround, groundZ] = GetGroundZFor_3dCoord(x, y, z + 50, false);
+
+  return hasGround && groundZ > z + 0.5 ? groundZ + 0.5 : z;
+}
+
 netEvent('ox:startCharacterSelect', async (_userId: number, characters: Character[]) => {
   if (OxPlayer.isLoaded) {
     OxPlayer.isLoaded = false;
@@ -61,9 +78,10 @@ netEvent('ox:startCharacterSelect', async (_userId: number, characters: Characte
   ];
   const heading = character?.heading || SPAWN_LOCATION[3];
 
-  RequestCollisionAtCoord(x, y, z);
-  FreezeEntityPosition(cache.ped, true);
-  SetEntityCoordsNoOffset(cache.ped, x, y, z, true, true, false);
+  const spawnZ = await LoadSpawnCollision(x, y, z);
+
+  if (spawnZ !== z) SetEntityCoordsNoOffset(cache.ped, x, y, spawnZ, true, true, false);
+
   SetEntityHeading(cache.ped, heading);
 
   SwitchOutPlayer(cache.ped, 1 | 8192, 1);

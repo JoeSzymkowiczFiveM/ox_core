@@ -79,9 +79,7 @@ on("onResourceStop", (resource: string) => {
 
 onNet("ox:setActiveCharacter", async (data: number | NewCharacter) => {
   const player = OxPlayer.get(source);
-
   if (!player) return;
-
   return await player.setActiveCharacter(data);
 });
 

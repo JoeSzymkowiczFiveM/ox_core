@@ -83,7 +83,7 @@ export class ClassInterface {
 
     if (this.keys) {
       Object.entries(this.keys).forEach(([key, obj]) => {
-        if (member[key]) {
+        if (member[key] && !obj[member[key]]) {
           obj[member[key]] = member;
         }
       });
@@ -100,8 +100,19 @@ export class ClassInterface {
 
     if (this.keys) {
       Object.entries(this.keys).forEach(([key, obj]) => {
-        if (member[key]) {
-          delete obj[member[key]];
+        const value = member[key];
+
+        if (value && obj[value] === member) {
+          delete obj[value];
+
+          for (const memberId in this.members) {
+            const matchingMember = this.members[memberId];
+
+            if (memberId !== String(id) && matchingMember[key] === value) {
+              obj[value] = matchingMember;
+              break;
+            }
+          }
         }
       });
     }
