@@ -1,8 +1,8 @@
 import { defaultAccountRoles } from "db/chiliaddb";
-import type { OxAccountPermissions, OxAccountRole } from "types";
-import { SelectAccount } from "./db";
-import { GetGroup } from "groups";
-import type { OxPlayer } from "player/class";
+import type { OxAccountPermissions, OxAccountRole } from 'types';
+import { SelectAccount } from './db';
+import { GetGroup } from 'groups';
+import type { OxPlayer } from 'player/class';
 
 const accountRoles = {} as Record<string, OxAccountPermissions>;
 
@@ -53,7 +53,7 @@ async function LoadRoles() {
     GlobalState[`accountRole.${roleName}`] = permissions;
   });
 
-  GlobalState["accountRoles"] = Object.keys(accountRoles);
+  GlobalState['accountRoles'] = Object.keys(accountRoles);
 }
 
 setImmediate(LoadRoles);

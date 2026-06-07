@@ -1,6 +1,6 @@
 import { CDB } from "../db/chiliaddb";
-import type { VehicleProperties } from "@overextended/ox_lib";
-import { DEFAULT_VEHICLE_STORE } from "config";
+import type { VehicleProperties } from '@overextended/ox_lib';
+import { DEFAULT_VEHICLE_STORE } from 'config';
 
 export type VehicleRow = {
   id: number;
@@ -35,7 +35,7 @@ export async function IsVinAvailable(plate: string) {
   return !(await CDB.exists("vehicles", { vin: plate }));
 }
 
-export async function GetStoredVehicleFromId(id: number | string, column = "id") {
+export async function GetStoredVehicleFromId(id: number | string, column = 'id') {
   const row = await CDB.findOne<VehicleRow & { stored?: string | null }>("vehicles", { [column]: id });
 
   if (!row?.stored) return null;

@@ -1,7 +1,7 @@
-import type { Character, Dict, OxStatus, CharacterLicense, OxLicense, BanDetails } from "types";
-import { CHARACTER_SLOTS } from "../../common/config";
+import type { Character, Dict, OxStatus, CharacterLicense, OxLicense, BanDetails } from 'types';
+import { CHARACTER_SLOTS } from '../../common/config';
 import { CDB, formatDate } from "../db/chiliaddb";
-import { OxPlayer } from "./class";
+import { OxPlayer } from './class';
 
 export async function GetUserIdFromIdentifier(identifier: string, offset?: number) {
   const users = await CDB.find<{ userId: number }>("users", { license2: identifier }, { sort: { field: "userId" } });

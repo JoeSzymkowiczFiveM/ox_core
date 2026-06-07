@@ -1,5 +1,5 @@
 import { CDB } from "db/chiliaddb";
-import type { DbGroup } from "types";
+import type { DbGroup } from 'types';
 
 export function SelectGroups() {
   return CDB.find<DbGroup>("ox_groups", undefined, { sort: { field: "name" } });
